@@ -1,67 +1,89 @@
-use std::sync::{Arc, Mutex};
-use std::thread;
-use std::fs::File;
-// use std::io::Write;
-use reqwest::StatusCode;
 
-fn test_url(url: &str, sheet: i32, page: i32) -> bool {
-    match reqwest::blocking::get(url) {
-        Ok(mut response) => {
-            let urlok: bool = response.status() == StatusCode::OK;
-            if urlok {
-                println!("BOOM {0} {1} {2} {3:?}", sheet, page, 200, response.content_length());
-                let mut file = File::create(format!("valid-paths/{sheet}-{page}")).unwrap();
-                response.copy_to(&mut file).unwrap();
-            } else {
-                println!("FAIL {} {} {}", sheet, page, response.status())
-            }
-            return urlok;
-        },
-        Err(err) => {
-            println!("ERR {0} {1} {2}", sheet, page, err);
-            return false;
+use scraper::{Html, Selector};
+
+async fn async_get_content(url: String) -> Result<String, reqwest::Error> {
+    let content = reqwest::get(url)
+        .await?
+        .text()
+        .await?;
+    return Ok(content);
+}
+
+async fn scrape_game_page(baseurl: String, game_href: String) {
+    let html_game_page = match async_get_content(baseurl + &game_href).await {
+        Ok(content) => content,
+        Err(error) => {
+            println!("{}", error);
+            return;
         }
+    };
+
+    let game_document = Html::parse_document(&html_game_page);
+    let sheet_selector = Selector::parse("div.updatesheeticons > a").unwrap();
+
+    println!("\n{}", game_href);
+    for sheet_container in game_document.select(&sheet_selector) {
+        let sheet_href_option = sheet_container.value().attr("href");
+        if sheet_href_option.is_none(){
+            continue;
+        }
+        let sheet_href = sheet_href_option.unwrap();
+        let sheet_name_selector = Selector::parse("span.iconheadertext").unwrap();
+
+        let mut sheet_name_option = sheet_container.select(&sheet_name_selector);
+        let sheet_name = sheet_name_option.next().unwrap().inner_html();
+
+        println!("\t{:60}{}", sheet_name, sheet_href);
+
     }
 }
 
-fn main() {
-    let mut urls: Vec<(String, i32, i32)> = vec![];
+async fn run() {
+    let baseurl = String::from("https://www.spriters-resource.com");
 
-    const BASEURL: &str = "https://www.spriters-resource.com/resources/sheets";
-
-    for i in (0..100).rev() {
-        for j in (0..100000).rev().step_by(100) {
-            let resource_location: String = format!("{}/{}/{}.gif", BASEURL, i, j);
-            let triple: (String, i32, i32) = (resource_location, i, j);
-            urls.push(triple);
+    let html_console_page = match async_get_content(baseurl.clone() + "/pc_computer/C.html").await {
+        Ok(content) => content,
+        Err(error) => {
+            println!("{}", error);
+            return;
         }
-    }
+    };
 
-    let urls_arc = Arc::new(Mutex::new(urls));
+    let console_document = Html::parse_document(&html_console_page);
 
-    let mut handles = vec![];
+    let game_link_selector = Selector::parse("#content > \
+                                              div:nth-child(4) a").unwrap();
+                                    // div.gameiconcontainer > \
+                                    // div.gameiconheader > \
+                                    // span.gameiconheadertext").unwrap();
 
-    for _ in 0..8 { // Number of parallel threads
-        let urls = Arc::clone(&urls_arc);
-        let handle = thread::spawn(move || {
-            loop {
-                let triple: (String, i32, i32);
-                {
-                    let mut urls = urls.lock().unwrap();
-                    if urls.is_empty() {
+    let mut join_handles = Vec::new();
 
-                        break;
-                    }
-                    triple = urls.pop().unwrap();
-                }
-                let (url, sheet, page) = triple;
-                test_url(&url, sheet, page);
-            }
+    for element in console_document.select(&game_link_selector){
+        let game_href_option = element.value().attr("href");
+        if game_href_option.is_none(){
+            continue;
+        }
+
+        let game_href = game_href_option.unwrap();
+        let game_href_str = String::from(game_href);
+        let base_url_str = baseurl.clone();
+        let handle = tokio::spawn( async move {
+            scrape_game_page(base_url_str, game_href_str.clone()).await;
         });
-        handles.push(handle);
+        join_handles.push(handle);
+
     }
 
-    for handle in handles {
-        handle.join().unwrap();
+    for handle in join_handles {
+        handle.await.unwrap();
     }
+
+}
+
+#[tokio::main]
+async fn main() {
+    tokio::join!(
+        run()
+    );
 }
