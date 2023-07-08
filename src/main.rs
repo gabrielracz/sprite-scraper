@@ -10,13 +10,15 @@ fn test_url(url: &str, sheet: i32, page: i32) -> bool {
             let urlok: bool = response.status() == StatusCode::OK;
             if urlok {
                 println!("BOOM {0} {1} {2} {3:?}", sheet, page, 200, response.content_length());
-                let mut file = File::create(format!("{sheet}-{page}.gif")).unwrap();
+                let mut file = File::create(format!("valid-paths/{sheet}-{page}")).unwrap();
                 response.copy_to(&mut file).unwrap();
+            } else {
+                println!("FAIL {} {} {}", sheet, page, response.status())
             }
             return urlok;
         },
         Err(err) => {
-            println!("FAIL {0} {1} {2}", sheet, page, err);
+            println!("ERR {0} {1} {2}", sheet, page, err);
             return false;
         }
     }
@@ -28,7 +30,7 @@ fn main() {
     const BASEURL: &str = "https://www.spriters-resource.com/resources/sheets";
 
     for i in (0..100).rev() {
-        for j in (0..100000).rev() {
+        for j in (0..100000).rev().step_by(100) {
             let resource_location: String = format!("{}/{}/{}.gif", BASEURL, i, j);
             let triple: (String, i32, i32) = (resource_location, i, j);
             urls.push(triple);
