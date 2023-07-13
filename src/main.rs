@@ -12,6 +12,33 @@ const ALPHA_PAGES: &'static[&str] = &[
     "X.html", "Y.html", "Z.html"
 ];
 
+const CONSOLES: &'static[&str] = &[
+    "arcade",
+    "browser_games",
+    "custom_edited",
+    "ds_dsi",
+    "game_boy_gbc",
+    "game_boy_advance",
+    "game_gear",
+    "gamecube",
+    "genesis_32x_scd",
+    "master_system",
+    "mobile",
+    "neo_geo_ngcd",
+    "nes",
+    "nintendo_64",
+    "nintendo_switch",
+    "pc_computer",
+    "playstation",
+    "playstation_2",
+    "playstation_3",
+    "psp",
+    "snes",
+    "wii",
+    "wii_u",
+    "xbox_360"
+];
+
 const BASEURL: &str = "https://www.spriters-resource.com";
 const ASSETS_DIR_NAME: &str = "assets";
 
@@ -129,7 +156,6 @@ async fn scrape_game_page(baseurl: &String, game_href: &String, console_name: &S
             category_name = category.unwrap();
         }
 
-            
         for sheet_container in sprite_group.select(&sprite_link_selector) {
             let sheet_href_option = sheet_container.value().attr("href");
             if sheet_href_option.is_none(){
@@ -150,6 +176,7 @@ async fn scrape_game_page(baseurl: &String, game_href: &String, console_name: &S
             let handle = tokio::spawn(async move {
                 let result = scrape_sprite_sheet(base_url_str, sheet_href_str, console_str, game_str, cat_str, sheet_name.clone()).await;
                 if result.is_none() {
+                    println!("ERR: scrape sprite failed tokio style");
                 }
 
                 let join_result = result.unwrap().await;
@@ -159,7 +186,7 @@ async fn scrape_game_page(baseurl: &String, game_href: &String, console_name: &S
                 } else {
                     join_result.unwrap();
                 }
-                tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+                tokio::time::sleep(tokio::time::Duration::from_millis(75)).await;
             });
             join_handles.push(handle);
 
@@ -255,10 +282,17 @@ async fn archive_single_sprite() {
     scrape_sprite_sheet(base_url_str, sprite_href_str, "pc_computer".to_string(), "diablodiablohellfire".to_string(), "Characters".to_string(), "Warrior".to_string()).await;
 }
 
+async fn archive_all_consoles() {
+    for console in CONSOLES {
+        archive_console(&console).await;
+    }
+}
+
 #[tokio::main]
 async fn main() {
     tokio::join!(
-        archive_console("nes")
+        archive_all_consoles()
+        // archive_console("ds_dsi")
         // archive_single_console_letter()
         // archive_single_game()
         // archive_single_sprite()
